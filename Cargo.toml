@@ -1,0 +1,12 @@
+[package]
+name = "range_proof"
+version = "0.1.0"
+authors = ["Rohit Narurkar <rohitnarurkar@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+bls12_381 = "0.1.1"
+failure = "0.1.7"
+num-bigint = "0.2.6"
+rand = "0.7.3"
+rand_core = "0.5.1"
