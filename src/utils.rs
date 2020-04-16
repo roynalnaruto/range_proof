@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use bitvec::prelude::*;
 use bls12_381::Scalar;
 
 macro_rules! slice_to_array {
@@ -24,6 +25,12 @@ pub fn to_raw_bytes(scalar: &Scalar) -> [u64; 4] {
     }
 
     out
+}
+
+pub fn to_bits(scalar: &Scalar) -> BitVec<Lsb0, u8> {
+    let bytes = scalar.to_bytes();
+
+    BitVec::<Lsb0, u8>::from_slice(&bytes)
 }
 
 #[cfg(test)]
@@ -61,5 +68,26 @@ mod test {
         let slice = vector.as_slice();
         let slice_32 = slice_to_array32(&slice);
         assert_eq!((*slice_32).type_name_of(), "[u8; 32]");
+    }
+
+    #[test]
+    fn test_to_bits() {
+        let bits = to_bits(&Scalar::from(5u64));
+        assert_eq!(bits[0], true);
+        assert_eq!(bits[1], false);
+        assert_eq!(bits[2], true);
+        for bit in bits.iter().skip(3) {
+            assert_eq!((*bit), false);
+        }
+
+        let bits = to_bits(&Scalar::from(12u64));
+        assert_eq!(bits[0], false);
+        assert_eq!(bits[1], false);
+        assert_eq!(bits[2], true);
+        assert_eq!(bits[3], true);
+        assert_eq!(bits[4], false);
+        for bit in bits.iter().skip(5) {
+            assert_eq!((*bit), false);
+        }
     }
 }
