@@ -1,6 +1,17 @@
+use std::convert::TryInto;
+
 use bls12_381::Scalar;
 
-use std::convert::TryInto;
+macro_rules! slice_to_array {
+    ($name: ident, $sty: ty) => {
+        pub fn $name(slice: &[u8]) -> $sty {
+            slice.try_into().expect("slice has incorrect length")
+        }
+    }
+}
+
+slice_to_array!(slice_to_array8, &[u8; 8]);
+slice_to_array!(slice_to_array32, &[u8; 32]);
 
 pub fn to_raw_bytes(scalar: &Scalar) -> [u64; 4] {
     let s_bytes = scalar.to_bytes();
@@ -15,17 +26,12 @@ pub fn to_raw_bytes(scalar: &Scalar) -> [u64; 4] {
     out
 }
 
-pub fn slice_to_array8(slice: &[u8]) -> &[u8; 8] {
-    slice.try_into().expect("slice with incorrect length")
-}
-
-pub fn slice_to_array32(slice: &[u8]) -> &[u8; 32] {
-    slice.try_into().expect("slice with incorrect length")
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
+
+    extern crate typename;
+    use typename::TypeName;
 
     #[test]
     fn test_to_raw_bytes() {
@@ -42,5 +48,18 @@ mod test {
         let scalar = Scalar::from_raw(expected_raw_bytes);
         let raw_bytes = to_raw_bytes(&scalar);
         assert_eq!(raw_bytes, expected_raw_bytes);
+    }
+
+    #[test]
+    fn test_slice_to_array() {
+        let vector = vec![0u8, 1u8, 0u8, 1u8, 0u8, 1u8, 0u8, 1u8];
+        let slice = vector.as_slice();
+        let slice_8 = slice_to_array8(&slice);
+        assert_eq!((*slice_8).type_name_of(), "[u8; 8]");
+
+        let vector = vec![1u8; 32];
+        let slice = vector.as_slice();
+        let slice_32 = slice_to_array32(&slice);
+        assert_eq!((*slice_32).type_name_of(), "[u8; 32]");
     }
 }

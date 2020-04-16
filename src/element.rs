@@ -31,16 +31,16 @@ pub fn primitive_nth_root_of_unity(n: usize) -> Result<Scalar, Error> {
         return Err(Error::ZeroethRootOfUnity)
     }
 
-    // get a random scalar
-    let mut rng = rand::thread_rng();
-    let x = random(&mut rng);
-
     // proceed only if n divides (q-1)
     let q_minus_1 = BigUint::from_bytes_le(&MODULUS_MINUS_1.to_bytes());
     let remainder = q_minus_1.clone() % n;
     if remainder.ne(&BigUint::from(0u32)) {
         return Err(Error::TrivialRootOfUnity)
     }
+
+    // get a random scalar
+    let mut rng = rand::thread_rng();
+    let x = random(&mut rng);
 
     // calculate the exponent and exponentiate the
     // random scalar
