@@ -8,9 +8,16 @@ edition = "2018"
 typename = "0.1.2"
 
 [dependencies]
+algebra = { git = "https://github.com/scipr-lab/zexe/", default-features = false, features = ["full"]}
+algebra-core = { git = "https://github.com/scipr-lab/zexe/", features = [ "parallel" ]}
 bitvec = "0.17.4"
 bls12_381 = "0.1.1"
 failure = "0.1.7"
+ff-fft = { git = "https://github.com/scipr-lab/zexe/" }
+merlin = "2.0.0"
 num-bigint = "0.2.6"
+num-traits = { version = "0.2", default-features = true }
+poly-commit = { git = "https://github.com/scipr-lab/poly-commit", branch = "master"}
 rand = "0.7.3"
+rand_chacha = "0.2"
 rand_core = "0.5.1"

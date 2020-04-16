@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use algebra::{bls12_381::Fr, to_bytes, ToBytes};
 use bitvec::prelude::*;
 use bls12_381::Scalar;
 
@@ -27,8 +28,8 @@ pub fn to_raw_bytes(scalar: &Scalar) -> [u64; 4] {
     out
 }
 
-pub fn to_bits(scalar: &Scalar) -> BitVec<Lsb0, u8> {
-    let bytes = scalar.to_bytes();
+pub fn to_bits(z: &Fr) -> BitVec<Lsb0, u8> {
+    let bytes = to_bytes![z].unwrap();
 
     BitVec::<Lsb0, u8>::from_slice(&bytes)
 }
@@ -72,7 +73,7 @@ mod test {
 
     #[test]
     fn test_to_bits() {
-        let bits = to_bits(&Scalar::from(5u64));
+        let bits = to_bits(&Fr::from(5u64));
         assert_eq!(bits[0], true);
         assert_eq!(bits[1], false);
         assert_eq!(bits[2], true);
@@ -80,7 +81,7 @@ mod test {
             assert_eq!((*bit), false);
         }
 
-        let bits = to_bits(&Scalar::from(12u64));
+        let bits = to_bits(&Fr::from(12u64));
         assert_eq!(bits[0], false);
         assert_eq!(bits[1], false);
         assert_eq!(bits[2], true);

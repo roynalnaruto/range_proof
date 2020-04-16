@@ -5,4 +5,6 @@ extern crate failure;
 
 pub mod element;
 pub mod errors;
-mod utils;
+pub mod range_proof;
+pub mod transcript;
+pub mod utils;
