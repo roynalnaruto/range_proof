@@ -2,7 +2,6 @@ use std::convert::TryInto;
 
 use algebra::{bls12_381::Fr, to_bytes, ToBytes};
 use bitvec::prelude::*;
-use bls12_381::Scalar;
 
 macro_rules! slice_to_array {
     ($name: ident, $sty: ty) => {
@@ -15,14 +14,13 @@ macro_rules! slice_to_array {
 slice_to_array!(slice_to_array8, &[u8; 8]);
 slice_to_array!(slice_to_array32, &[u8; 32]);
 
-pub fn to_raw_bytes(scalar: &Scalar) -> [u64; 4] {
-    let s_bytes = scalar.to_bytes();
-    let s_chunks = s_bytes.chunks(8);
+pub fn to_raw_bytes(in_bytes: &[u8; 32]) -> [u64; 4] {
+    let chunks = in_bytes.chunks(8);
 
     let mut out = [0u64; 4];
 
-    for (s_chunk, i) in s_chunks.into_iter().zip(0..4) {
-        out[i] = u64::from_le_bytes(*slice_to_array8(s_chunk));
+    for (chunk, i) in chunks.into_iter().zip(0..4) {
+        out[i] = u64::from_le_bytes(*slice_to_array8(chunk));
     }
 
     out
@@ -38,13 +36,15 @@ pub fn to_bits(z: &Fr) -> BitVec<Lsb0, u8> {
 mod test {
     use super::*;
 
+    use bls12_381::Scalar;
+
     extern crate typename;
     use typename::TypeName;
 
     #[test]
     fn test_to_raw_bytes() {
         let three = Scalar::from(3 as u64);
-        let three_raw_bytes = to_raw_bytes(&three);
+        let three_raw_bytes = to_raw_bytes(&three.to_bytes());
         assert_eq!(three_raw_bytes, [3, 0, 0, 0]);
 
         let expected_raw_bytes = [
@@ -54,7 +54,7 @@ mod test {
             0x73eda753299d7d48,
         ];
         let scalar = Scalar::from_raw(expected_raw_bytes);
-        let raw_bytes = to_raw_bytes(&scalar);
+        let raw_bytes = to_raw_bytes(&scalar.to_bytes());
         assert_eq!(raw_bytes, expected_raw_bytes);
     }
 

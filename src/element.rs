@@ -48,13 +48,13 @@ pub fn primitive_nth_root_of_unity(n: usize) -> Result<Scalar, Error> {
     let exponent = exponent.to_bytes_le();
     let exponent = exponent.as_slice();
     let exponent = Scalar::from_bytes(&utils::slice_to_array32(&exponent)).unwrap();
-    let w = x.pow(&utils::to_raw_bytes(&exponent));
+    let w = x.pow(&utils::to_raw_bytes(&exponent.to_bytes()));
 
     // if w exponentiated by n/2 (mod q) is 1
     // it is not the primitive root.
     // we will need to recalculate a random x in this case
     let n_by_2 = Scalar::from((n / 2) as u64);
-    let w_pow_n_by_2 = w.pow(&utils::to_raw_bytes(&n_by_2));
+    let w_pow_n_by_2 = w.pow(&utils::to_raw_bytes(&n_by_2.to_bytes()));
     match w_pow_n_by_2.eq(&Scalar::one()) {
         true => primitive_nth_root_of_unity(n),
         _    => Ok(w)
@@ -68,7 +68,8 @@ pub fn nth_roots_of_unity(n: usize, w: &Scalar) -> Vec<Scalar> {
     roots.push(w.clone());
 
     for i in 2..=n {
-        let e = utils::to_raw_bytes(&Scalar::from(i as u64));
+        let s = Scalar::from(i as u64);
+        let e = utils::to_raw_bytes(&s.to_bytes());
         let w_pow_e = w.pow(&e);
         roots.push(w_pow_e);
     }
@@ -88,8 +89,8 @@ mod test {
         // w^6 will be roll back to unity
         // w^7 will be w again
         let sixth_root = primitive_nth_root_of_unity(6usize).unwrap();
-        let scalar_6 = utils::to_raw_bytes(&Scalar::from(6u64));
-        let scalar_7 = utils::to_raw_bytes(&Scalar::from(7u64));
+        let scalar_6 = utils::to_raw_bytes(&Scalar::from(6u64).to_bytes());
+        let scalar_7 = utils::to_raw_bytes(&Scalar::from(7u64).to_bytes());
         let w_pow_6 = sixth_root.pow(&scalar_6);
         let w_pow_7 = sixth_root.pow(&scalar_7);
         assert_eq!(w_pow_6.eq(&one), true);
@@ -99,8 +100,8 @@ mod test {
         // 32 divides (q - 1)
         // w^32 will be roll back to unity
         let root = primitive_nth_root_of_unity(32usize).unwrap();
-        let scalar_32 = utils::to_raw_bytes(&Scalar::from(32u64));
-        let scalar_33 = utils::to_raw_bytes(&Scalar::from(33u64));
+        let scalar_32 = utils::to_raw_bytes(&Scalar::from(32u64).to_bytes());
+        let scalar_33 = utils::to_raw_bytes(&Scalar::from(33u64).to_bytes());
         let w_pow_32 = root.pow(&scalar_32);
         let w_pow_33 = root.pow(&scalar_33);
         assert_eq!(w_pow_32.eq(&one), true);
@@ -123,7 +124,7 @@ mod test {
         // n = 16
         let primitive_16 = primitive_nth_root_of_unity(16usize).unwrap();
         let nth_roots_16 = nth_roots_of_unity(16, &primitive_16);
-        let sixteen = utils::to_raw_bytes(&Scalar::from(16u64));
+        let sixteen = utils::to_raw_bytes(&Scalar::from(16u64).to_bytes());
         for root in nth_roots_16.iter() {
             let root_pow = root.pow(&sixteen);
             assert_eq!(root_pow.eq(&one), true);
@@ -132,7 +133,7 @@ mod test {
         // n = 6
         let primitive_6 = primitive_nth_root_of_unity(6usize).unwrap();
         let nth_roots_6 = nth_roots_of_unity(6, &primitive_6);
-        let six = utils::to_raw_bytes(&Scalar::from(6u64));
+        let six = utils::to_raw_bytes(&Scalar::from(6u64).to_bytes());
         for root in nth_roots_6.iter() {
             let root_pow = root.pow(&six);
             assert_eq!(root_pow.eq(&one), true);
@@ -141,7 +142,7 @@ mod test {
         // n = 64
         let primitive_64 = primitive_nth_root_of_unity(64usize).unwrap();
         let nth_roots_64 = nth_roots_of_unity(64, &primitive_64);
-        let sixtyfour = utils::to_raw_bytes(&Scalar::from(64u64));
+        let sixtyfour = utils::to_raw_bytes(&Scalar::from(64u64).to_bytes());
         for root in nth_roots_64.iter() {
             let root_pow = root.pow(&sixtyfour);
             assert_eq!(root_pow.eq(&one), true);
