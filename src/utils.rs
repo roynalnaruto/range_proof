@@ -32,6 +32,13 @@ pub fn to_bits(z: &Fr) -> BitVec<Lsb0, u8> {
     BitVec::<Lsb0, u8>::from_slice(&bytes)
 }
 
+pub fn as_ref(z: &Fr) -> [u64; 4] {
+    let z_bytes = to_bytes![z].unwrap();
+    let slice_32 = slice_to_array32(&z_bytes.as_slice());
+
+    to_raw_bytes(&slice_32)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

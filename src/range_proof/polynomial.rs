@@ -1,3 +1,4 @@
+use algebra_core::fields::Field;
 use algebra::bls12_381::Fr;
 use bitvec::prelude::*;
 use ff_fft::domain::EvaluationDomain;
@@ -5,6 +6,11 @@ use ff_fft::polynomial::{DensePolynomial as Polynomial};
 use num_traits::identities::{One, Zero};
 
 use crate::utils;
+
+pub fn compute_f(z: &Fr) -> Polynomial<Fr> {
+    // f is a constant polynomial f(x) = z
+    Polynomial::<Fr>::from_coefficients_vec(vec![z.clone()])
+}
 
 pub fn compute_g(domain: &EvaluationDomain<Fr>, z: &Fr) -> Polynomial<Fr> {
     // get bits for z
@@ -107,6 +113,25 @@ pub fn compute_w3(
     Polynomial::<Fr>::from_coefficients_vec(domain_2n.ifft(&w3_evals))
 }
 
+pub fn compute_q(
+    domain: &EvaluationDomain<Fr>,
+    w1: &Polynomial<Fr>,
+    w2: &Polynomial<Fr>,
+    w3: &Polynomial<Fr>,
+    tau: &Fr
+) -> (Polynomial<Fr>, Polynomial<Fr>) {
+    // find constant polynomials for tau and tau^2
+    let poly_tau: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![tau.clone()]);
+    let poly_tau_2: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![tau.square()]);
+
+    // find linear combination of w1, w2, w3
+    let lc = &(w1 + &(w2 * &poly_tau)) + &(w3 * &poly_tau_2);
+
+    lc.divide_by_vanishing_poly(*domain).unwrap()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -115,6 +140,16 @@ mod test {
     use algebra_core::fields::Field;
     use num_traits::identities::One;
     use rand::Rng;
+
+    #[test]
+    fn test_compute_f() {
+        let z = Fr::from(123u8);
+        let f = compute_f(&z);
+
+        let mut rng = rand::thread_rng();
+        let r = Fr::from(rng.gen::<u64>());
+        assert_eq!(f.evaluate(r), z);
+    }
 
     #[test]
     fn test_compute_g() {
@@ -219,5 +254,25 @@ mod test {
         let part_c = r - w_n_minus_1;
         let w3_expected = part_a * part_b * part_c;
         assert_eq!(w3.evaluate(r), w3_expected);
+    }
+
+    #[test]
+    fn test_compute_q() {
+        let n = 8usize;
+        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let z = Fr::from(68u8);
+        let g = compute_g(&domain, &z);
+        let (w1, w2) = compute_w1_w2(&domain, &g, &z);
+        let w3 = compute_w3(&domain, &g);
+
+        let mut rng = rand::thread_rng();
+        let tau = Fr::from(rng.gen::<u64>());
+
+        let (_q, q_rem) = compute_q(&domain, &w1, &w2, &w3, &tau);
+
+        // since the linear combination should also
+        // satisfy all roots of unity,
+        // q_rem should be a zero polynomial
+        assert!(q_rem.is_zero());
     }
 }
