@@ -7,9 +7,9 @@ use num_traits::identities::{One, Zero};
 
 use crate::utils;
 
-pub fn compute_f(z: &Fr) -> Polynomial<Fr> {
-    // f is a constant polynomial f(x) = z
-    Polynomial::<Fr>::from_coefficients_vec(vec![z.clone()])
+pub fn compute_f(domain: &EvaluationDomain<Fr>, z: &Fr, r: &Fr) -> Polynomial<Fr> {
+    // f is a linear polynomial: f(1) = z
+    Polynomial::<Fr>::from_coefficients_vec(domain.ifft(&vec![z.clone(), r.clone()]))
 }
 
 pub fn compute_g(domain: &EvaluationDomain<Fr>, z: &Fr) -> Polynomial<Fr> {
@@ -42,7 +42,7 @@ pub fn compute_g(domain: &EvaluationDomain<Fr>, z: &Fr) -> Polynomial<Fr> {
 pub fn compute_w1_w2(
     domain: &EvaluationDomain<Fr>,
     g: &Polynomial<Fr>,
-    z: &Fr
+    f: &Polynomial<Fr>
 ) -> (Polynomial<Fr>, Polynomial<Fr>) {
     let one = Fr::one();
     let w_n_minus_1 = domain.elements().last().unwrap();
@@ -62,9 +62,7 @@ pub fn compute_w1_w2(
     // polynomial: P(x) = x - 1
     let x_minus_1 = Polynomial::<Fr>::from_coefficients_vec(vec![-one, one]);
 
-    // f is the constant polynomial f = z
-    let f = Polynomial::<Fr>::from_coefficients_vec(vec![z.clone()]);
-    let g_minus_f = g - &f;
+    let g_minus_f = g - f;
     let w1: Polynomial::<Fr> = &(&g_minus_f * &x_n_minus_1) / &x_minus_1;
 
     // polynomial: P(x) = 1
@@ -132,6 +130,65 @@ pub fn compute_q(
     lc.divide_by_vanishing_poly(*domain).unwrap()
 }
 
+pub fn compute_w_cap(
+    domain: &EvaluationDomain<Fr>,
+    f: &Polynomial<Fr>,
+    q: &Polynomial<Fr>,
+    rho: &Fr
+) -> Polynomial<Fr> {
+    let n_as_ref = utils::as_ref(&Fr::from(domain.size() as u8));
+    let one = Fr::one();
+    let rho_n_minus_1 = rho.pow(&n_as_ref) - one;
+    let rho_n_minus_1_by_rho_minus_1 = rho_n_minus_1 / ((*rho) - one);
+
+    let rho_poly_1: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![rho_n_minus_1_by_rho_minus_1]);
+    let rho_poly_2: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![rho_n_minus_1]);
+
+    &(f * &rho_poly_1) + &(q * &rho_poly_2)
+}
+
+pub fn compute_w(
+    domain: &EvaluationDomain<Fr>,
+    w1: &Polynomial<Fr>,
+    w2: &Polynomial<Fr>,
+    w3: &Polynomial<Fr>,
+    q: &Polynomial<Fr>,
+    tau: &Fr
+) -> Polynomial<Fr> {
+    let poly_tau: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![*tau]);
+    let poly_tau_2: Polynomial<Fr> =
+        Polynomial::<Fr>::from_coefficients_vec(vec![tau.square()]);
+
+    &(&(w1 + &(w2 * &poly_tau)) + &(w3 * &poly_tau_2)) - &q.mul_by_vanishing_poly(*domain)
+}
+
+pub fn compute_w2_w3_parts(
+    w2: &Polynomial<Fr>,
+    w3: &Polynomial<Fr>,
+    tau: &Fr
+) -> (Polynomial<Fr>, Polynomial<Fr>) {
+    let poly_tau = Polynomial::<Fr>::from_coefficients_vec(vec![tau.clone()]);
+    let poly_tau_2 = Polynomial::<Fr>::from_coefficients_vec(vec![tau.square()]);
+
+    (
+        w2 * &poly_tau,
+        w3 * &poly_tau_2
+    )
+}
+
+pub fn compute_w1_part(
+    domain: &EvaluationDomain<Fr>,
+    g: &Polynomial<Fr>
+) -> Polynomial<Fr> {
+    let one = Fr::one();
+    let divisor = Polynomial::<Fr>::from_coefficients_vec(vec![-one, one]);
+
+    &g.mul_by_vanishing_poly(*domain) / &divisor
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -141,14 +198,26 @@ mod test {
     use num_traits::identities::One;
     use rand::Rng;
 
+    use crate::{
+        range_proof::verification::compute_w_cap_commitment,
+        commitment_scheme::{commit, trusted_setup}
+    };
+
     #[test]
     fn test_compute_f() {
-        let z = Fr::from(123u8);
-        let f = compute_f(&z);
+        let n = 8usize;
+        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let z = Fr::from(2u8);
+        let r = Fr::from(4u8);
+        let f = compute_f(&domain, &z, &r);
 
         let mut rng = rand::thread_rng();
-        let r = Fr::from(rng.gen::<u64>());
-        assert_eq!(f.evaluate(r), z);
+        let rho = Fr::from(rng.gen::<u64>());
+
+        assert_eq!(f.evaluate(Fr::one()), z);
+        assert_eq!(f.evaluate(domain.group_gen), r);
+        assert!(f.evaluate(rho).ne(&z));
+        assert!(f.evaluate(rho).ne(&r));
     }
 
     #[test]
@@ -180,10 +249,14 @@ mod test {
     fn test_compute_w1_w2() {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+
+        let mut rng = rand::thread_rng();
+        let r = Fr::from(rng.gen::<u64>());
         let z = Fr::from(92u8);
+        let f = compute_f(&domain, &z, &r);
         let g = compute_g(&domain, &z);
 
-        let (w1, w2) = compute_w1_w2(&domain, &g, &z);
+        let (w1, w2) = compute_w1_w2(&domain, &g, &f);
 
         // both w1 and w2 should evaluate to 0 at x = 1
         assert!(w1.evaluate(Fr::one()).is_zero());
@@ -199,10 +272,9 @@ mod test {
         let n_as_ref = utils::to_raw_bytes(
             &utils::slice_to_array32(to_bytes![Fr::from(n as u8)].unwrap().as_slice())
         );
-        let mut rng = rand::thread_rng();
         let r = Fr::from(rng.gen::<u64>());
         let part_a = g.evaluate(r);
-        let part_b = z.clone();
+        let part_b = f.evaluate(r);
         let part_c = (r.pow(&n_as_ref) - Fr::one()) / (r - Fr::one());
         let w1_expected = (part_a - part_b) * part_c;
         assert_eq!(w1.evaluate(r), w1_expected);
@@ -260,9 +332,13 @@ mod test {
     fn test_compute_q() {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let mut rng = rand::thread_rng();
+
         let z = Fr::from(68u8);
+        let r = Fr::from(rng.gen::<u64>());
+        let f = compute_f(&domain, &z, &r);
         let g = compute_g(&domain, &z);
-        let (w1, w2) = compute_w1_w2(&domain, &g, &z);
+        let (w1, w2) = compute_w1_w2(&domain, &g, &f);
         let w3 = compute_w3(&domain, &g);
 
         let mut rng = rand::thread_rng();
@@ -274,5 +350,105 @@ mod test {
         // satisfy all roots of unity,
         // q_rem should be a zero polynomial
         assert!(q_rem.is_zero());
+    }
+
+    #[test]
+    fn test_compute_w_cap() {
+        // initial setup
+        let n = 8usize;
+        let (pk, _) = trusted_setup(4usize * n).unwrap();
+        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+
+        // random numbers
+        let mut rng = rand::thread_rng();
+        let r = Fr::from(rng.gen::<u64>());
+        let tau = Fr::from(rng.gen::<u64>());
+        let rho = Fr::from(rng.gen::<u64>());
+
+        // compute polynomials
+        let z = Fr::from(68u8);
+        let f = compute_f(&domain, &z, &r);
+        let g = compute_g(&domain, &z);
+        let (w1, w2) = compute_w1_w2(&domain, &g, &f);
+        let w3 = compute_w3(&domain, &g);
+        let (q, _) = compute_q(&domain, &w1, &w2, &w3, &tau);
+        let w_cap = compute_w_cap(&domain, &f, &q, &rho);
+
+        // compute commitments
+        let f_commitment = commit(&pk, &f);
+        let q_commitment = commit(&pk, &q);
+        let w_cap_commitment_expected = commit(&pk, &w_cap);
+
+        // calculate w_cap commitment
+        // fact that commitment scheme is additively homomorphic
+        let w_cap_commitment_calculated =
+            compute_w_cap_commitment(&domain, f_commitment, q_commitment, &rho);
+
+        assert_eq!(w_cap_commitment_expected, w_cap_commitment_calculated);
+    }
+
+    #[test]
+    fn test_compute_w1_part() {
+        let n = 8usize;
+        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let z = Fr::from(92u8);
+        let g = compute_g(&domain, &z);
+
+        let mut rng = rand::thread_rng();
+        let rho = Fr::from(rng.gen::<u64>());
+        let g_eval = g.evaluate(rho);
+
+        let n_as_ref = utils::as_ref(&Fr::from(domain.size() as u8));
+        let one = Fr::one();
+        let rho_n_minus_1 = rho.pow(&n_as_ref) - one;
+
+        let w1_part_poly = compute_w1_part(&domain, &g);
+
+        assert_eq!(
+            w1_part_poly.evaluate(rho),
+            g_eval * rho_n_minus_1 / (rho - one)
+        )
+    }
+
+    #[test]
+    fn test_compute_w2_w3_part() {
+        let n = 8usize;
+        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let mut rng = rand::thread_rng();
+
+        let z = Fr::from(92u8);
+        let r = Fr::from(rng.gen::<u64>());
+        let f = compute_f(&domain, &z, &r);
+        let g = compute_g(&domain, &z);
+        let (_, w2) = compute_w1_w2(&domain, &g, &f);
+        let w3 = compute_w3(&domain, &g);
+
+        let tau = Fr::from(rng.gen::<u64>());
+        let rho = Fr::from(rng.gen::<u64>());
+        let g_eval = g.evaluate(rho);
+        let g_omega_eval = g.evaluate(rho * domain.group_gen);
+
+        let n_as_ref = utils::as_ref(&Fr::from(domain.size() as u8));
+        let one = Fr::one();
+        let two = Fr::from(2u8);
+        let rho_n_minus_1 = rho.pow(&n_as_ref) - one;
+        let w_n_minus_1 = domain.elements().last().unwrap();
+
+        let (w2_part_poly, w3_part_poly) = compute_w2_w3_parts(&w2, &w3, &tau);
+
+        assert_eq!(
+            w2_part_poly.evaluate(rho),
+            tau * g_eval * (one - g_eval) * (rho_n_minus_1) / (rho - w_n_minus_1)
+        );
+
+        assert_eq!(
+            w3_part_poly.evaluate(rho),
+            {
+                let part_a = g_eval - (two * g_omega_eval);
+                let part_b = one - part_a;
+                let part_c = rho - w_n_minus_1;
+                tau * tau * part_a * part_b * part_c
+            }
+        );
     }
 }

@@ -10,9 +10,6 @@ pub trait TranscriptProtocol {
     /// Append a `commitment` with the given `label`.
     fn append_commitment(&mut self, label: &'static [u8], comm: &Commitment<Bls12_381>);
 
-    /// Append a `Scalar` with the given `label`.
-    fn append_scalar(&mut self, label: &'static [u8], s: &Fr);
-
     /// Compute a `label`ed challenge variable.
     fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr;
 }
@@ -20,10 +17,6 @@ pub trait TranscriptProtocol {
 impl TranscriptProtocol for Transcript {
     fn append_commitment(&mut self, label: &'static [u8], comm: &Commitment<Bls12_381>) {
         self.append_message(label, &to_bytes![comm].unwrap());
-    }
-
-    fn append_scalar(&mut self, label: &'static [u8], s: &Fr) {
-        self.append_message(label, &to_bytes![s].unwrap())
     }
 
     fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr {

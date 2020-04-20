@@ -1,14 +1,16 @@
 use algebra::{bls12_381::Fr, Bls12_381};
-use algebra_core::fields::Field;
 use ff_fft::domain::EvaluationDomain;
-use num_traits::identities::One;
 use poly_commit::kzg10::{Commitment, Powers};
+use rand::Rng;
 
 use crate::{
-    commitment_scheme::{commit},
+    commitment_scheme::{
+        commit,
+        create_witness,
+        create_aggregate_witness
+    },
     range_proof::polynomial,
-    transcript::TranscriptProtocol,
-    utils
+    transcript::TranscriptProtocol
 };
 
 pub fn prove(
@@ -20,12 +22,17 @@ pub fn prove(
     Fr, Fr, Fr,
     Commitment<Bls12_381>,
     Commitment<Bls12_381>,
+    Commitment<Bls12_381>,
+    Commitment<Bls12_381>,
     Commitment<Bls12_381>
 ) {
     // compute all polynomials
-    let f_poly = polynomial::compute_f(&z);
+    let mut rng = rand::thread_rng();
+    let r = Fr::from(rng.gen::<u64>());
+    let f_poly = polynomial::compute_f(&domain, &z, &r);
+
     let g_poly = polynomial::compute_g(&domain, &z);
-    let (w1_poly, w2_poly) = polynomial::compute_w1_w2(&domain, &g_poly, &z);
+    let (w1_poly, w2_poly) = polynomial::compute_w1_w2(&domain, &g_poly, &f_poly);
     let w3_poly = polynomial::compute_w3(&domain, &g_poly);
 
     // aggregate w1, w2 and w3 to compute quotient polynomial
@@ -42,15 +49,27 @@ pub fn prove(
     // `rho` is the random evaluation point
     let rho = transcript.challenge_scalar(b"rho");
     let g_eval = g_poly.evaluate(rho);
-    let g_omega_eval = g_poly.evaluate(rho * domain.group_gen);
 
-    // compute evaluation of w_cap at `rho`
-    let n_as_ref = utils::as_ref(&Fr::from(domain.size() as u8));
-    let one = Fr::one();
-    let rho_n_minus_1 = rho.pow(&n_as_ref) - Fr::one();
-    let part_a = z.clone() * rho_n_minus_1 / (rho - one);
-    let part_b = q_poly.evaluate(rho) * rho_n_minus_1;
-    let w_cap_eval = part_a + part_b;
+    // evaluate g at `rho * omega`
+    let rho_omega = rho * domain.group_gen;
+    let g_omega_eval = g_poly.evaluate(rho_omega);
+
+    // compute evaluation of w_cap at ρ
+    let w_cap_poly = polynomial::compute_w_cap(&domain, &f_poly, &q_poly, &rho);
+    let w_cap_eval = w_cap_poly.evaluate(rho);
+
+    // compute witness for g(X) at ρw
+    let shifted_witness_poly = create_witness(&g_poly, &rho_omega);
+    let shifted_witness_commitment = commit(&pk, &shifted_witness_poly);
+
+    // compute aggregate witness for
+    // g(X) at ρ, f(X) at ρ, w_cap(X) at ρ
+    let aggregation_challenge = transcript.challenge_scalar(b"aggregation_challenge");
+    let aggregate_witness_poly = create_aggregate_witness(
+        vec![g_poly, w_cap_poly],
+        &rho, &aggregation_challenge
+    );
+    let aggregate_witness_commitment = commit(&pk, &aggregate_witness_poly);
 
     (
         g_eval,
@@ -58,6 +77,8 @@ pub fn prove(
         w_cap_eval,
         f_commitment,
         g_commitment,
-        q_commitment
+        q_commitment,
+        aggregate_witness_commitment,
+        shifted_witness_commitment
     )
 }
