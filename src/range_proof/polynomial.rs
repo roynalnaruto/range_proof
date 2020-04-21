@@ -12,14 +12,19 @@ pub fn compute_f(domain: &EvaluationDomain<Fr>, z: &Fr, r: &Fr) -> Polynomial<Fr
     Polynomial::<Fr>::from_coefficients_vec(domain.ifft(&vec![z.clone(), r.clone()]))
 }
 
-pub fn compute_g(domain: &EvaluationDomain<Fr>, z: &Fr) -> Polynomial<Fr> {
+pub fn compute_g(
+    domain: &EvaluationDomain<Fr>,
+    z: &Fr,
+    alpha: &Fr,
+    beta: &Fr
+) -> Polynomial<Fr> {
     // get bits for z
     // consider only the first `n` bits
     let mut z_bits = utils::to_bits(&z);
     BitVec::truncate(&mut z_bits, domain.size());
 
     // push the first evaluation point, i.e. (n-1)th bit of z
-    let mut evaluations: Vec<Fr> = Vec::with_capacity(domain.size() - 1);
+    let mut evaluations: Vec<Fr> = Vec::with_capacity(domain.size());
     let z_n_minus_1 = Fr::from(*z_bits.last().unwrap() as u8);
     evaluations.push(z_n_minus_1);
 
@@ -36,7 +41,24 @@ pub fn compute_g(domain: &EvaluationDomain<Fr>, z: &Fr) -> Polynomial<Fr> {
     // reverse the evaluations
     let evaluations: Vec<Fr> = evaluations.iter().rev().cloned().collect();
 
-    Polynomial::from_coefficients_vec(domain.ifft(&evaluations))
+    // compute g
+    let g_poly = Polynomial::from_coefficients_vec(domain.ifft(&evaluations));
+
+    // extended domain
+    let domain_2n: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(domain.size() + 1).unwrap();
+
+    // map the original g_poly to domain(n+1)
+    // add random values alpha and beta as evaluations of g
+    // at all even indices, g_evals[2k] matches
+    // the evaluation at some original root of unity
+    // Hence only update two odd indices with alpha and beta
+    // this makes g evaluate to the expected evaluations at all
+    // roots of unity of domain size `n`, but makes is a different polynomial
+    let mut g_evals = domain_2n.fft(&g_poly);
+    g_evals[1] = *alpha;
+    g_evals[3] = *beta;
+
+    Polynomial::from_coefficients_vec(domain_2n.ifft(&g_evals))
 }
 
 pub fn compute_w1_w2(
@@ -75,40 +97,43 @@ pub fn compute_w1_w2(
 
 pub fn compute_w3(
     domain: &EvaluationDomain<Fr>,
+    domain_2n: &EvaluationDomain<Fr>,
     g: &Polynomial<Fr>
 ) -> Polynomial<Fr> {
     // w3: [g(X) - 2g(Xw)] * [1 - g(X) + 2g(Xw)] * [X - w^(n-1)]
     // degree of g = n - 1
-    // degree of w3 = (n - 1) + (n - 1) + 1 = 2n - 1
-    // the new domain can be of size 2n
-    let domain_2n = EvaluationDomain::<Fr>::new(2 * domain.size()).unwrap();
+    // degree of w3 = (2n - 1) + (2n - 1) + 1 = 4n - 1
+    // the new domain can be of size 4n
+    let domain_4n = EvaluationDomain::<Fr>::new(2 * domain_2n.size()).unwrap();
 
     // find evaluations of g in the new domain
-    let mut g_evals = domain_2n.fft(&g);
+    let mut g_evals = domain_4n.fft(&g);
 
     // since we have doubled the domain size
     // the roots of unity of the new domain will also occur
     // in between the roots of unity of the original domain.
     // hence, if g(X) <- g_evals[i]
-    // then g(Xw) <- g_evals[i+2]
+    // then g(Xw) <- g_evals[i+4]
     g_evals.push(g_evals[0]);
     g_evals.push(g_evals[1]);
+    g_evals.push(g_evals[2]);
+    g_evals.push(g_evals[3]);
 
     // calculate evaluations of w3
     let w_n_minus_1 = domain.elements().last().unwrap();
     let two = Fr::from(2u8);
-    let w3_evals: Vec<Fr> = (0..domain_2n.size())
-        .zip(domain_2n.elements())
+    let w3_evals: Vec<Fr> = (0..domain_4n.size())
+        .zip(domain_4n.elements())
         .into_iter()
         .map(|(i, x_i)| {
-            let part_a = g_evals[i] - (two * g_evals[i + 2]);
-            let part_b = Fr::one() - g_evals[i] + (two * g_evals[i + 2]);
+            let part_a = g_evals[i] - (two * g_evals[i + 4]);
+            let part_b = Fr::one() - g_evals[i] + (two * g_evals[i + 4]);
             let part_c = x_i - w_n_minus_1;
             part_a * part_b * part_c
         })
         .collect();
 
-    Polynomial::<Fr>::from_coefficients_vec(domain_2n.ifft(&w3_evals))
+    Polynomial::<Fr>::from_coefficients_vec(domain_4n.ifft(&w3_evals))
 }
 
 pub fn compute_q(
@@ -229,8 +254,11 @@ mod test {
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
         let z = Fr::from(100u8);
 
-        let g = compute_g(&domain, &z);
-        assert_eq!(g.degree(), n - 1);
+        let mut rng = rand::thread_rng();
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
+        let g = compute_g(&domain, &z, &alpha, &beta);
+        assert_eq!(g.degree(), 2usize * n - 1);
         assert_eq!(g.evaluate(Fr::one()), z);
 
         // n2 = 4, 2^n2 = 16, 0 <= z < 2^n2
@@ -240,8 +268,10 @@ mod test {
         let domain2: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n2).unwrap();
         let z2 = Fr::from(13u8);
 
-        let g2 = compute_g(&domain2, &z2);
-        assert_eq!(g2.degree(), n2 - 1);
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
+        let g2 = compute_g(&domain2, &z2, &alpha, &beta);
+        assert_eq!(g2.degree(), 2usize * n2 - 1);
         assert_eq!(g2.evaluate(Fr::one()), z2);
     }
 
@@ -252,9 +282,11 @@ mod test {
 
         let mut rng = rand::thread_rng();
         let r = Fr::from(rng.gen::<u64>());
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
         let z = Fr::from(92u8);
         let f = compute_f(&domain, &z, &r);
-        let g = compute_g(&domain, &z);
+        let g = compute_g(&domain, &z, &alpha, &beta);
 
         let (w1, w2) = compute_w1_w2(&domain, &g, &f);
 
@@ -295,22 +327,26 @@ mod test {
     fn test_compute_w3() {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
-        let z = Fr::from(83u8);
-        let g = compute_g(&domain, &z);
+        let domain_2n: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(2usize * n).unwrap();
 
-        let w3 = compute_w3(&domain, &g);
+        let z = Fr::from(83u8);
+        let mut rng = rand::thread_rng();
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
+        let g = compute_g(&domain, &z, &alpha, &beta);
+
+        let w3 = compute_w3(&domain, &domain_2n, &g);
 
         // w3 should evaluate to 0 at all roots of unity for original domain
         for root in domain.elements() {
             assert!(w3.evaluate(root).is_zero());
         }
 
-        // w3 degree should be 2n - 1
-        assert_eq!(w3.degree(), 2 * domain.size() - 1);
+        // w3 degree should be 4n - 1
+        assert_eq!(w3.degree(), 4 * domain.size() - 1);
 
         // evaluate w3 at a random field element
         let w_n_minus_1 = domain.elements().last().unwrap();
-        let mut rng = rand::thread_rng();
         let r = Fr::from(rng.gen::<u64>());
         let part_a = g.evaluate(r) - (Fr::from(2u8) * g.evaluate(r * domain.group_gen));
         let part_b = Fr::one() - g.evaluate(r) + (Fr::from(2u8) * g.evaluate(r * domain.group_gen));
@@ -332,14 +368,17 @@ mod test {
     fn test_compute_q() {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let domain_2n: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(2usize * n).unwrap();
         let mut rng = rand::thread_rng();
 
         let z = Fr::from(68u8);
         let r = Fr::from(rng.gen::<u64>());
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
         let f = compute_f(&domain, &z, &r);
-        let g = compute_g(&domain, &z);
+        let g = compute_g(&domain, &z, &alpha, &beta);
         let (w1, w2) = compute_w1_w2(&domain, &g, &f);
-        let w3 = compute_w3(&domain, &g);
+        let w3 = compute_w3(&domain, &domain_2n, &g);
 
         let mut rng = rand::thread_rng();
         let tau = Fr::from(rng.gen::<u64>());
@@ -358,19 +397,22 @@ mod test {
         let n = 8usize;
         let (pk, _) = trusted_setup(4usize * n).unwrap();
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let domain_2n: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(2usize * n).unwrap();
 
         // random numbers
         let mut rng = rand::thread_rng();
         let r = Fr::from(rng.gen::<u64>());
         let tau = Fr::from(rng.gen::<u64>());
         let rho = Fr::from(rng.gen::<u64>());
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
 
         // compute polynomials
         let z = Fr::from(68u8);
         let f = compute_f(&domain, &z, &r);
-        let g = compute_g(&domain, &z);
+        let g = compute_g(&domain, &z, &alpha, &beta);
         let (w1, w2) = compute_w1_w2(&domain, &g, &f);
-        let w3 = compute_w3(&domain, &g);
+        let w3 = compute_w3(&domain, &domain_2n, &g);
         let (q, _) = compute_q(&domain, &w1, &w2, &w3, &tau);
         let w_cap = compute_w_cap(&domain, &f, &q, &rho);
 
@@ -392,9 +434,11 @@ mod test {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
         let z = Fr::from(92u8);
-        let g = compute_g(&domain, &z);
-
         let mut rng = rand::thread_rng();
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
+        let g = compute_g(&domain, &z, &alpha, &beta);
+
         let rho = Fr::from(rng.gen::<u64>());
         let g_eval = g.evaluate(rho);
 
@@ -414,14 +458,17 @@ mod test {
     fn test_compute_w2_w3_part() {
         let n = 8usize;
         let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let domain_2n: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(2usize * n).unwrap();
         let mut rng = rand::thread_rng();
 
         let z = Fr::from(92u8);
         let r = Fr::from(rng.gen::<u64>());
+        let alpha = Fr::from(rng.gen::<u64>());
+        let beta = Fr::from(rng.gen::<u64>());
         let f = compute_f(&domain, &z, &r);
-        let g = compute_g(&domain, &z);
+        let g = compute_g(&domain, &z, &alpha, &beta);
         let (_, w2) = compute_w1_w2(&domain, &g, &f);
-        let w3 = compute_w3(&domain, &g);
+        let w3 = compute_w3(&domain, &domain_2n, &g);
 
         let tau = Fr::from(rng.gen::<u64>());
         let rho = Fr::from(rng.gen::<u64>());

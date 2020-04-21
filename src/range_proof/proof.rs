@@ -26,14 +26,22 @@ pub fn prove(
     Commitment<Bls12_381>,
     Commitment<Bls12_381>
 ) {
+    // extended domain
+    // by adding more elements to `g_poly` (for zero knowledge properties)
+    // the domain is extended
+    let domain_2n: EvaluationDomain<Fr> =
+        EvaluationDomain::<Fr>::new(2usize * domain.size()).unwrap();
+
     // compute all polynomials
     let mut rng = rand::thread_rng();
     let r = Fr::from(rng.gen::<u64>());
     let f_poly = polynomial::compute_f(&domain, &z, &r);
 
-    let g_poly = polynomial::compute_g(&domain, &z);
+    let alpha = Fr::from(rng.gen::<u64>());
+    let beta = Fr::from(rng.gen::<u64>());
+    let g_poly = polynomial::compute_g(&domain, &z, &alpha, &beta);
     let (w1_poly, w2_poly) = polynomial::compute_w1_w2(&domain, &g_poly, &f_poly);
-    let w3_poly = polynomial::compute_w3(&domain, &g_poly);
+    let w3_poly = polynomial::compute_w3(&domain, &domain_2n, &g_poly);
 
     // aggregate w1, w2 and w3 to compute quotient polynomial
     // `tau` is the random scalar for aggregation
