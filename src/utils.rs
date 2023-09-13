@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
-use algebra::{bls12_381::Fr, to_bytes, ToBytes};
+use ark_bls12_381::Fr;
+use ark_serialize::{CanonicalSerialize, Compress};
 use bitvec::prelude::*;
 
 macro_rules! slice_to_array {
@@ -8,7 +9,7 @@ macro_rules! slice_to_array {
         pub fn $name(slice: &[u8]) -> $sty {
             slice.try_into().expect("slice has incorrect length")
         }
-    }
+    };
 }
 
 slice_to_array!(slice_to_array8, &[u8; 8]);
@@ -27,16 +28,14 @@ pub fn to_raw_bytes(in_bytes: &[u8; 32]) -> [u64; 4] {
 }
 
 pub fn to_bits(z: &Fr) -> BitVec<Lsb0, u8> {
-    let bytes = to_bytes![z].unwrap();
+    let mut bytes = Vec::new();
+    z.serialize_with_mode(&mut bytes, Compress::No).unwrap();
 
     BitVec::<Lsb0, u8>::from_slice(&bytes)
 }
 
 pub fn as_ref(z: &Fr) -> [u64; 4] {
-    let z_bytes = to_bytes![z].unwrap();
-    let slice_32 = slice_to_array32(&z_bytes.as_slice());
-
-    to_raw_bytes(&slice_32)
+    z.0 .0
 }
 
 #[cfg(test)]

@@ -1,15 +1,12 @@
-use algebra::{bls12_381::Fr, Bls12_381};
-use ff_fft::EvaluationDomain;
-use poly_commit::kzg10::{Commitment, Powers, VerifierKey};
-
+use ark_bls12_381::{Bls12_381, Fr};
+use ark_poly::EvaluationDomain;
+use ark_poly::GeneralEvaluationDomain;
+use ark_poly_commit::kzg10::{Commitment, Powers, VerifierKey};
 pub mod polynomial;
 pub mod proof;
 pub mod verification;
 
-use crate::{
-    errors::Error,
-    transcript::TranscriptProtocol
-};
+use crate::{errors::Error, transcript::TranscriptProtocol};
 
 #[derive(Debug)]
 pub struct Evaluations {
@@ -39,30 +36,34 @@ impl RangeProof {
         pk: &Powers<Bls12_381>,
         n: usize,
         z: &Fr,
-        transcript: &mut dyn TranscriptProtocol
+        transcript: &mut dyn TranscriptProtocol,
     ) -> RangeProof {
-        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let domain: GeneralEvaluationDomain<Fr> = GeneralEvaluationDomain::<Fr>::new(n).unwrap();
 
         let (
-            g_eval, g_omega_eval, w_cap_eval,
-            f_commitment, g_commitment, q_commitment,
+            g_eval,
+            g_omega_eval,
+            w_cap_eval,
+            f_commitment,
+            g_commitment,
+            q_commitment,
             aggregate_witness_commitment,
-            shifted_witness_commitment
+            shifted_witness_commitment,
         ) = proof::prove(&pk, &domain, &z, transcript);
 
         RangeProof {
             evaluations: Evaluations {
                 g: g_eval,
                 g_omega: g_omega_eval,
-                w_cap: w_cap_eval
+                w_cap: w_cap_eval,
             },
             commitments: Commitments {
                 f: f_commitment,
                 g: g_commitment,
-                q: q_commitment
+                q: q_commitment,
             },
             aggregate_witness_commitment: aggregate_witness_commitment,
-            shifted_witness_commitment: shifted_witness_commitment
+            shifted_witness_commitment: shifted_witness_commitment,
         }
     }
 
@@ -71,17 +72,18 @@ impl RangeProof {
         &self,
         vk: &VerifierKey<Bls12_381>,
         n: usize,
-        transcript: &mut dyn TranscriptProtocol
+        transcript: &mut dyn TranscriptProtocol,
     ) -> Result<(), Error> {
-        let domain: EvaluationDomain<Fr> = EvaluationDomain::<Fr>::new(n).unwrap();
+        let domain: GeneralEvaluationDomain<Fr> = GeneralEvaluationDomain::<Fr>::new(n).unwrap();
 
         verification::verify(
-            &vk, &domain,
+            &vk,
+            &domain,
             &self.evaluations,
             &self.commitments,
             self.aggregate_witness_commitment,
             self.shifted_witness_commitment,
-            transcript
+            transcript,
         )
     }
 }

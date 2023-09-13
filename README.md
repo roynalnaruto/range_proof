@@ -15,7 +15,7 @@ let (pk, vk) = commitment_scheme::trusted_setup(4usize * n).unwrap();
 ```
 * [Prover] Create range proof
 ```rust
-use algebra::bls12_381::Fr;
+use ark_bls12_381::Fr;
 use merlin::Transcript;
 // number in the above range
 let z = Fr::from(100u8);
