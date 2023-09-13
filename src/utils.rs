@@ -35,7 +35,11 @@ pub fn to_bits(z: &Fr) -> BitVec<Lsb0, u8> {
 }
 
 pub fn as_ref(z: &Fr) -> [u64; 4] {
-    z.0 .0
+    let mut z_bytes = Vec::new();
+    z.serialize_with_mode(&mut z_bytes, Compress::No).unwrap();
+    let slice_32 = slice_to_array32(&z_bytes.as_slice());
+
+    to_raw_bytes(&slice_32)
 }
 
 #[cfg(test)]
